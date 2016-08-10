@@ -156,94 +156,57 @@ Feed the Graph
   summary_str = sess.run(summary_op, feed_dict=feed_dict)
   summary_writer.add_summary(summary_str, step)
 
-Checkpoint and Restor
+## Checkpoint and Restor
   
   saver = tf.train.Saver()
   saver.save(sess, FLAGS.train_dir, global_step=step)
   saver.restore(sess, FLAGS.train_dir)
 
-
-Example of 28x28 image, 20 feature maps, with 5x5 local receptive field. stride 1.
-  image_shape as input to conv layer reduced by pool at each layer.
-  weight_shape at each layer is decided by local receptive region and feature maps.
-    >>> net = Network([
-          ConvPoolLayer(image_shape=(mini_batch_size, 1, 28, 28), // img shape 28x28
-            ## create 20 feature maps, each neuro connect to one 5x5 local receptive field
-            filter_shape=(20, 1, 5, 5),
-            poolsize=(2, 2)),   # after 2x2 max pool, 28x28 reduced to 12x12
-          ConvPoolLayer(image_shape=(mini_batch_size, 20, 12, 12), // img shape of 12x12 with 20 features
-            ## create 40 feature maps from prev 20 maps, still 5x5 region over 12x12 img shape
-            filter_shape=(40, 20, 5, 5),
-            poolsize=(2, 2)),
-          FullyConnectedLayer(n_in=40*4*4, n_out=100),
-          SoftmaxLayer(n_in=100, n_out=10)], mini_batch_size)
-    >>> net.SGD(training_data, 60, mini_batch_size, 0.1, validation_data, test_data)  
-
 ## ImageNet and Inception with Convolution and Pooling
 
-  Tensorflow provide API for convolution and pooling with tf.nn.conv2d() and tf.nn.max_pool.
+Convolution Network exploits spatial data in image and convolute local receptive region to create features for image.
+
+Kernel/filter of the image is used for feature extraction. it is a matrix that applies to sliding regions of image and calculate the new value for the pixel. e.g., kernel with 3x3 matrix set the center cell's value as the sum of all neighbors times the matrix.
   
-    tf.nn.conv2d(input, filter, strides, padding, use_cudnn_on_gpu=None, data_format=None, name=None)
+    http://setosa.io/ev/image-kernels/
 
-    def conv2d(x, W):  # weight as filter
-      return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
-
-    def max_pool_2x2(x):
-      return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
-  
-  1st layer weight shape [5,5,1,32], 5x5 region, 1 input channel, output 32 feature maps.
-    W_conv1 = weight_variable([5, 5, 1, 32])
-    b_conv1 = bias_variable([32])
-    h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
-    h_pool1 = max_pool_2x2(h_conv1)
-
-  2nd layer, 32 feature maps from first layer, stil 5x5 local receptive region, output 64 features.
-    W_conv2 = weight_variable([5, 5, 32, 64])
-    b_conv2 = bias_variable([64])
-    h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
-    h_pool2 = max_pool_2x2(h_conv2)
-
-#######
-## Slim scope, restorable variables, ops, loss.
-#######
-  Mostly for convolution netowrk, with `conv2d()`.
-
-  Input layer of convolution network has [image_width * image_height] neurons.
-  We then slide the local receptive field across the entire input image. 
-  Each neuron in hidden layer learn to analyze its particular local receptive field.
-
-  For each local receptive field, there is a different hidden neuron in the first hidden layer.
-  Each neuron in the first hidden layer connect to one local receptive region(input neurons inside the local receptive region), and compute a dot product between weights and local receptive field.
-  
-  The number of neurons in first hidden layer is f(kernel_h, kernel_w, stride), as local receptive field moves stride once.
-  For example, for 28×28 input image, and 5×5 local receptive fields, then there will be 
-  24×24 (28-5+1) neurons in the first hidden layer. 
-  Each hidden neuron 5x5 weights and a bias connected to its local receptive field.
-  For each feature map we need 25=5×5 shared weights, plus a single shared bias.
-  As a result, the shape of weight is matrix of [n-neurons, [local receptive field]]
-
-  The map from input neuron to hidden layer is called feature map, as all neurons in the first hidden layer detect the same exact feature, just at different location(local receptive field) in the image.
-
-  Each feature map is defined by a set of height x width shared weights. Shared weights of said to define a kernel or filter. kenerl size/filter size is the dim of local receptive field.
-  For example, if we have 3 feature maps in first hidden layer, the shape of weights = [3x24x24].
-  
-  conv2d creates and return a variable called 'weights', representing the convolutional
-  kernel/matrix, that is convolved with the input. it returns a tensor representing
-  the output of the operation.
-  Note `conv2d` returns weights variable with internally re-shape input to filters_out.
+conv2d creates and return a variable called 'weights', representing the convolutional
+kernel matrix, that is convolved with the input. it returns a tensor representing
+the output of the operation. 
+`conv2d` returns weights variable with internally re-shape input to filters_out.
 
   def conv2d(inputs, num_filters_out, kernel_size, stride=1,...)
       inputs: a tensor of shape [batch_size, height, width, channels] or [batch_size, channels].
-      kernel_size: defines feature map of height * width shared weights, and a single shared bias. 
-        the size of local receptive region. [kernel_height, kernel_width] of the filters
+      kernel_size: defines kernel/fitler matrix size/shape of the feature map. [3,3] kernel, etc.
 
       num_filters_in = inputs.get_shape()[-1]
       weights_shape = [kernel_h, kernel_w, num_filters_in, num_filters_out]
 
-      For image classification with Inception, conv2d weight is a matrix of 
-      [kernel_h * kernel_w * num_filters_in, num_filters_out]
-      num_filters_out is feature map
+conv2d returns weight of shape [kenel_ht * kernel_wd * input, num of feature maps output].
+Input layer of convolution network has [image_width * image_height] neurons.
+We then slide the local receptive field across the entire input image for every stride, repeat this for as many feature maps we defined in each layer.
+Each neuron in hidden layer learn to analyze its particular local receptive field.
 
+The number of neurons in first hidden layer is f(kernel_h, kernel_w, stride).
+Each neuron in the first hidden layer connect to one local receptive region(input neurons inside the local receptive region), and compute a dot product between weights and local receptive field.
+For the following layer, 
+
+For example, for 28×28 input image, and 5×5 local receptive fields, there will be 
+24×24 (28-5+1) neurons in the first hidden layer. 
+Each hidden neuron 5x5 weights and a bias connected to its local receptive field.
+For each feature map we need 25=5×5 shared weights, plus a single shared bias.
+As a result, the shape of weight is matrix of [n-neurons, [local receptive field]]
+
+Each feature map is defined by a set of height x width shared weights. Shared weights of said to define a kernel or filter. kenerl size/filter size is the dim of local receptive field.
+For example, if we have 3 feature maps in first hidden layer, the shape of weights = [3x24x24].  
+  
+  tf.nn.conv2d(input, kernel/filter, strides, padding, use_cudnn_on_gpu=None, data_format=None, name=None)
+
+  def conv2d(x, W):  # weight as filter
+    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+
+  def max_pool_2x2(x):
+    return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
   
   weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
   l2_regularizer = lambda t: losses.l2_loss(t, weight=0.0005)
@@ -258,8 +221,21 @@ Example of 28x28 image, 20 feature maps, with 5x5 local receptive field. stride 
                               initializer=tf.zeros_initializer,
                               device='/cpu:0')
 
-  inception_v3 architecture is weight with 32 feature maps from 3x3 filter/kernel size
-  # cascading prev layers output weight as next layers input weight.
+  1st layer weight shape [5,5,1,32], 5x5 region, 1 input channel, output 32 feature maps.
+    W_conv1 = weight_variable([5, 5, 1, 32])
+    b_conv1 = bias_variable([32])
+    h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
+    h_pool1 = max_pool_2x2(h_conv1)
+
+  2nd layer, 32 feature maps from first layer, stil 5x5 local receptive region, output 64 features.
+    W_conv2 = weight_variable([5, 5, 32, 64])
+    b_conv2 = bias_variable([64])
+    h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
+    h_pool2 = max_pool_2x2(h_conv2)
+
+## Inception_v3 and Slim scope, variable, ops, loss
+
+inception_v3 architecture is weight with 32 feature maps from 3x3 filter/kernel size and cascading prev layers output weight as next layers input weight.
   
   with tf.op_scope([inputs], scope, 'inception_v3'):
     with scopes.arg_scope([ops.conv2d, ops.fc, ops.batch_norm, ops.dropout]:
@@ -305,8 +281,7 @@ Example of 28x28 image, 20 feature maps, with 5x5 local receptive field. stride 
 
   # Get all variables to restore.
   variables_to_restore = slim.variables.get_variables_to_restore()
-
-
+  
 
 ## ML with tf.contrib.learn
 
