@@ -31,15 +31,15 @@ Two distinct types of query-item relationships in the data.
   1. targeted. query really mean it, need to match text as exactly as possible.
   2. exploratory. “seafood” or “italian food”.
 
-  m = tf.contrib.learn.DNNLinearCombinedClassifier(
-        model_dir=model_dir,
-        linear_feature_columns=wide_columns,
-        dnn_feature_columns=deep_columns,
-        dnn_hidden_units=[100, 50])
+    m = tf.contrib.learn.DNNLinearCombinedClassifier(
+          model_dir=model_dir,
+          linear_feature_columns=wide_columns,
+          dnn_feature_columns=deep_columns,
+          dnn_hidden_units=[100, 50])
 
-  if FLAGS.model_type == "wide":
-      m = tf.contrib.learn.LinearClassifier(model_dir=model_dir,
-                                            feature_columns=wide_columns)
+    if FLAGS.model_type == "wide":
+        m = tf.contrib.learn.LinearClassifier(model_dir=model_dir,
+                                              feature_columns=wide_columns)
     elif FLAGS.model_type == "deep":
       m = tf.contrib.learn.DNNClassifier(model_dir=model_dir,
                                          feature_columns=deep_columns,
@@ -53,11 +53,10 @@ Two distinct types of query-item relationships in the data.
           dnn_hidden_units=[100, 50])
     return m
 
-  m.fit(input_fn=train_input_fn, steps=200)
-  results = m.evaluate(input_fn=eval_input_fn, steps=1)
-  for key in sorted(results):
-      print "%s: %s" % (key, results[key])
-
+    m.fit(input_fn=train_input_fn, steps=200)
+    results = m.evaluate(input_fn=eval_input_fn, steps=1)
+    for key in sorted(results):
+        print "%s: %s" % (key, results[key])
 
 
 ## Columns and FeatureColumn
@@ -86,9 +85,15 @@ Each of the sparse, high-dimensional categorical features are first converted in
     tf.contrib.layers.embedding_column(race, dimension=8),
   ]
 
-## Model
+## Build the Graph
 
-placeholder holds values for training input and classifier labels.
+3-stage pattern: inference(), loss(), and training().
+
+  inference() - Builds the graph as far as is required for running the network forward to make predictions.
+  loss() - Adds to the inference graph the ops required to generate loss.
+  training() - Adds to the loss graph the ops required to compute and apply gradients.
+
+placeholder: holds training input and classifier labels.
   x = tf.placeholder(tf.float32, shape=[None, 784])
   y_ = tf.placeholder(tf.float32, shape=[None, 10])
 
@@ -96,7 +101,7 @@ variables store model parameters.
   W = tf.Variable(tf.zeros([784,10]))
   b = tf.Variable(tf.zeros([10]))
 
-variable shape: variable is a multidimensional array.
+variable shape is a multidimensional array.
 weight variable is a weight list with each entry repr the weight of one input.
 
 For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_units].
@@ -105,8 +110,74 @@ For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_units].
   weights = tf.Variable(tf.truncated_normal(
     [IMAGE_PIXELS, hidden1_units],  // 768 pixels connect to input weight, with n neurons in the layer.
   biases = tf.Variable(tf.zeros([hidden1_units]), name='biases')
-  
   hidden1 = tf.nn.relu(tf.matmul(images, weights) + biases)
+  hidden2 = tf.nn.relu(tf.matmul(hidden1, weights) + biases)
+  logits = tf.matmul(hidden2, weights) + biases
+
+Loss: 
+  labels = tf.to_int64(labels)
+  cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    logits, labels, name='xentropy')
+  loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
+
+Training:
+  
+  tf.scalar_summary(loss.op.name, loss)
+  optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+  global_step = tf.Variable(0, name='global_step', trainable=False)
+  train_op = optimizer.minimize(loss, global_step=global_step)
+
+  with tf.Graph().as_default():
+    sess = tf.Session()
+    with tf.Session() as sess:
+    init = tf.initialize_all_variables()
+    sess.run(init)
+
+    for step in xrange(FLAGS.max_steps):
+      sess.run(train_op)
+
+Feed the Graph
+  for each step, the code will generate a feed dictionary for next train batch.
+    
+  images_feed, labels_feed = data_set.next_batch(FLAGS.batch_size,
+                                             FLAGS.fake_data)
+  feed_dict = {
+      images_placeholder: images_feed,
+      labels_placeholder: labels_feed,
+  }
+
+  for step in xrange(FLAGS.max_steps):
+    feed_dict = fill_feed_dict(data_sets.train,images_placeholder,labels_placeholder)
+    _, loss_value = sess.run([train_op, loss],
+                           feed_dict=feed_dict)
+
+  summary_op = tf.merge_all_summaries()
+  summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
+  summary_str = sess.run(summary_op, feed_dict=feed_dict)
+  summary_writer.add_summary(summary_str, step)
+
+Checkpoint and Restor
+  
+  saver = tf.train.Saver()
+  saver.save(sess, FLAGS.train_dir, global_step=step)
+  saver.restore(sess, FLAGS.train_dir)
+
+
+Example of 28x28 image, 20 feature maps, with 5x5 local receptive field. stride 1.
+  image_shape as input to conv layer reduced by pool at each layer.
+  weight_shape at each layer is decided by local receptive region and feature maps.
+    >>> net = Network([
+          ConvPoolLayer(image_shape=(mini_batch_size, 1, 28, 28), // img shape 28x28
+            ## create 20 feature maps, each neuro connect to one 5x5 local receptive field
+            filter_shape=(20, 1, 5, 5),
+            poolsize=(2, 2)),   # after 2x2 max pool, 28x28 reduced to 12x12
+          ConvPoolLayer(image_shape=(mini_batch_size, 20, 12, 12), // img shape of 12x12 with 20 features
+            ## create 40 feature maps from prev 20 maps, still 5x5 region over 12x12 img shape
+            filter_shape=(40, 20, 5, 5),
+            poolsize=(2, 2)),
+          FullyConnectedLayer(n_in=40*4*4, n_out=100),
+          SoftmaxLayer(n_in=100, n_out=10)], mini_batch_size)
+    >>> net.SGD(training_data, 60, mini_batch_size, 0.1, validation_data, test_data)  
 
 ## ImageNet and Inception with Convolution and Pooling
 
@@ -120,32 +191,22 @@ For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_units].
     def max_pool_2x2(x):
       return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
   
-  Weight varialbe shape is [5,5,1,32], means 5x5 patch size, 1 input channel, and 32 output channels.
-    
+  1st layer weight shape [5,5,1,32], 5x5 region, 1 input channel, output 32 feature maps.
     W_conv1 = weight_variable([5, 5, 1, 32])
     b_conv1 = bias_variable([32])
     h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
     h_pool1 = max_pool_2x2(h_conv1)
 
+  2nd layer, 32 feature maps from first layer, stil 5x5 local receptive region, output 64 features.
+    W_conv2 = weight_variable([5, 5, 32, 64])
+    b_conv2 = bias_variable([64])
+    h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
+    h_pool2 = max_pool_2x2(h_conv2)
 
+#######
 ## Slim scope, restorable variables, ops, loss.
-
-  weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
-  l2_regularizer = lambda t: losses.l2_loss(t, weight=0.0005)
-  weights = variables.variable('weights',
-                               shape=[100, 100],
-                               initializer=weights_initializer,
-                               regularizer=l2_regularizer,
-                               device='/cpu:0')
-
-  biases = variables.variable('biases',
-                              shape=[100],
-                              initializer=tf.zeros_initializer,
-                              device='/cpu:0')
-
-  conv2d creates a variable called 'weights', representing the convolutional
-  kernel/matrix, that is convolved with the input. it returns a tensor representing
-  the output of the operation
+#######
+  Mostly for convolution netowrk, with `conv2d()`.
 
   Input layer of convolution network has [image_width * image_height] neurons.
   We then slide the local receptive field across the entire input image. 
@@ -166,35 +227,69 @@ For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_units].
   Each feature map is defined by a set of height x width shared weights. Shared weights of said to define a kernel or filter. kenerl size/filter size is the dim of local receptive field.
   For example, if we have 3 feature maps in first hidden layer, the shape of weights = [3x24x24].
   
-  Example of 28x28 image, 20 feature maps, with 5x5 local receptive field. stride 1.
-    >>> net = Network([
-          ConvPoolLayer(image_shape=(mini_batch_size, 1, 28, 28), 
-            ## output 20 feature maps, each neuro connect to one 5x5 local receptive field
-            filter_shape=(20, 1, 5, 5),
-            poolsize=(2, 2)),
-          ConvPoolLayer(image_shape=(mini_batch_size, 20, 12, 12), # input is 20 feature map, 12x12
-            # output 40 feature maps, still 5x5 on 12x12, each neuron connect to all 20 prev output
-            filter_shape=(40, 20, 5, 5),
-            poolsize=(2, 2)),
-          FullyConnectedLayer(n_in=40*4*4, n_out=100),
-          SoftmaxLayer(n_in=100, n_out=10)], mini_batch_size)
-    >>> net.SGD(training_data, 60, mini_batch_size, 0.1, validation_data, test_data)  
+  conv2d creates and return a variable called 'weights', representing the convolutional
+  kernel/matrix, that is convolved with the input. it returns a tensor representing
+  the output of the operation.
+  Note `conv2d` returns weights variable with internally re-shape input to filters_out.
 
-  After we define many feature maps, we apply max-pooling to each feature map separately.
-  if we apply max 2x2 pooling, the output will from 24x24 neurons to 12x12 neurons for one feature map.
-
-    def conv2d(inputs, num_filters_out, kernel_size, stride=1,...)
-      inputs: a tensor of size [batch_size, height, width, channels] or [batch_size, channels].
+  def conv2d(inputs, num_filters_out, kernel_size, stride=1,...)
+      inputs: a tensor of shape [batch_size, height, width, channels] or [batch_size, channels].
       kernel_size: defines feature map of height * width shared weights, and a single shared bias. 
-        a list of length 2: [kernel_height, kernel_width] of the filters
+        the size of local receptive region. [kernel_height, kernel_width] of the filters
 
       num_filters_in = inputs.get_shape()[-1]
       weights_shape = [kernel_h, kernel_w, num_filters_in, num_filters_out]
 
-  For image classification with Inception, conv2d weight is a matrix of 
-    [kernel_h * kernel_w * num_filters_in, num_filters_out]
+      For image classification with Inception, conv2d weight is a matrix of 
+      [kernel_h * kernel_w * num_filters_in, num_filters_out]
+      num_filters_out is feature map
 
-  net = slim.ops.conv2d(input, 32, [3, 3], scope='conv1')
+  
+  weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+  l2_regularizer = lambda t: losses.l2_loss(t, weight=0.0005)
+  weights = variables.variable('weights',
+                               shape=[100, 100],
+                               initializer=weights_initializer,
+                               regularizer=l2_regularizer,
+                               device='/cpu:0')
+
+  biases = variables.variable('biases',
+                              shape=[100],
+                              initializer=tf.zeros_initializer,
+                              device='/cpu:0')
+
+  inception_v3 architecture is weight with 32 feature maps from 3x3 filter/kernel size
+  # cascading prev layers output weight as next layers input weight.
+  
+  with tf.op_scope([inputs], scope, 'inception_v3'):
+    with scopes.arg_scope([ops.conv2d, ops.fc, ops.batch_norm, ops.dropout]:
+      with scopes.arg_scope([ops.conv2d, ops.max_pool, ops.avg_pool],
+                            stride=1, padding='VALID'):
+        # input: 299 x 299 x 3, output: 149x149x3, as stride=2
+        end_points['conv0'] = ops.conv2d(inputs, 32, [3, 3], stride=2,
+                                         scope='conv0')
+        # input: 149 x 149 x 32, output: 147 x 147 x 32
+        end_points['conv1'] = ops.conv2d(end_points['conv0'], 32, [3, 3],
+                                         scope='conv1')
+        # input: 147 x 147 x 32, output: 147 x 147 x 64
+        end_points['conv2'] = ops.conv2d(end_points['conv1'], 64, [3, 3],
+                                         padding='SAME', scope='conv2')
+        # input: 147 x 147 x 64, output: 73x73x64, stride=2
+        end_points['pool1'] = ops.max_pool(end_points['conv2'], [3, 3],
+                                           stride=2, scope='pool1')
+        # input: 73 x 73 x 64, outout: 73x73x80 with 1x1 convolute
+        end_points['conv3'] = ops.conv2d(end_points['pool1'], 80, [1, 1],
+                                         scope='conv3')
+        # input: 73 x 73 x 80, output: 71x71x192
+        end_points['conv4'] = ops.conv2d(end_points['conv3'], 192, [3, 3],
+                                         scope='conv4')
+        # input 71 x 71 x 192, output: 35x35x192, stride=2
+        end_points['pool2'] = ops.max_pool(end_points['conv4'], [3, 3],
+                                           stride=2, scope='pool2')
+        # output: 35 x 35 x 192.
+        net = end_points['pool2']
+  
+## Model parameters checkpoint and restore
 
   # Get all model variables from all the layers.
   model_variables = slim.variables.get_variables()
@@ -202,7 +297,16 @@ For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_units].
   # Get all model variables from a specific the layer, i.e 'conv1'.
   conv1_variables = slim.variables.get_variables('conv1')
 
+  # Get all weights from all the layers.
+  weights = slim.variables.get_variables_by_name('weights')
+
+  # Get all bias from all the layers.
+  biases = slim.variables.get_variables_by_name('biases')
+
   # Get all variables to restore.
-  # (i.e. only those created by 'conv1' and 'conv2')
   variables_to_restore = slim.variables.get_variables_to_restore()
+
+
+
+## ML with tf.contrib.learn
 
