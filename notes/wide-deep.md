@@ -283,5 +283,5 @@ inception_v3 architecture is weight with 32 feature maps from 3x3 filter/kernel 
   variables_to_restore = slim.variables.get_variables_to_restore()
   
 
-## ML with tf.contrib.learn
+
 
