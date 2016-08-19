@@ -139,8 +139,10 @@ build linear model with LinearClassifier by providing a list of feature columns.
 
 We can use TensorFlow Serving Exporter module to export the model.
 saver is used to serialize graph variable values to the model export so that they can be properly restored later.
-sess is the TensorFlow session that holds the trained model you are exporting.
-sess.graph.as_graph_def() is the protobuf of the graph. exporter init take it.
+sess is the TensorFlow session that holds the `trained` model you are exporting.
+sess.graph.as_graph_def() is the protobuf of the graph, pass to exporter.init.
+signature says model type is `classification` and input/scores/classes tensors.
+init exporter with sess.graph and signature(classification, input/scores/classes)
 
     from tensorflow.contrib.session_bundle import exporter
     
@@ -151,4 +153,24 @@ sess.graph.as_graph_def() is the protobuf of the graph. exporter init take it.
                         default_graph_signature=signature)
     model_exporter.export(export_path, tf.constant(FLAGS.export_version), sess)
 
+exporter outputs model graph in export.meta, and the serialiazed variables of the graph in checkpoint and export-???-of-???.
+    
+    checkpoint export-00000-of-00001 export.meta
+
+## Load exported Model with SessionBundle(SessionOptions)
+
+SessionBundleFactory::CreateSessionBundle() loads an exported TensorFlow model at the given path and creates a SessionBundle object for running inference with the model.
+We can batch groups of Inference requests inside BatchingParameters to increase the throughput.
+
+    SessionBundleConfig session_bundle_config;
+    
+    BatchingParameters* batching_parameters =
+      session_bundle_config.mutable_batching_parameters();
+    
+    SessionBundleFactory::Create(session_bundle_config, &bundle_factory));
+    bundle_factory->CreateSessionBundle(bundle_path, &bundle));
+
+    // session bundle contains session and meta_graph_def <- deser(export.meta)
+    // now inference input/output to tensors in graph and invoke run.
+    bundle_->session->Run({signature_.scores().tensor_name()}, &outputs);
 

@@ -97,19 +97,19 @@ placeholder: holds training input and classifier labels.
   x = tf.placeholder(tf.float32, shape=[None, 784])
   y_ = tf.placeholder(tf.float32, shape=[None, 10])
 
-variables store model parameters.
+variables store model parameters at each layer.
   W = tf.Variable(tf.zeros([784,10]))
   b = tf.Variable(tf.zeros([10]))
 
 variable shape is a multidimensional array.
 weight variable is a weight list with each entry repr the weight of one input.
 
-For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_units].
+For the first layer, the dimensions are [IMAGE_PIXELS, hidden1_neurons].
 [batch, in_height, in_width, in_channels] => [ht*width*chan, out-chan]
 
   weights = tf.Variable(tf.truncated_normal(
-    [IMAGE_PIXELS, hidden1_units],  // 768 pixels connect to input weight, with n neurons in the layer.
-  biases = tf.Variable(tf.zeros([hidden1_units]), name='biases')
+    [IMAGE_PIXELS, hidden1_neurons],  // 768 pixels connect to input, output n neurons
+  biases = tf.Variable(tf.zeros([hidden1_neurons]), name='biases')
   hidden1 = tf.nn.relu(tf.matmul(images, weights) + biases)
   hidden2 = tf.nn.relu(tf.matmul(hidden1, weights) + biases)
   logits = tf.matmul(hidden2, weights) + biases
@@ -156,7 +156,7 @@ Feed the Graph
   summary_str = sess.run(summary_op, feed_dict=feed_dict)
   summary_writer.add_summary(summary_str, step)
 
-## Checkpoint and Restor
+## Checkpoint and Restore
   
   saver = tf.train.Saver()
   saver.save(sess, FLAGS.train_dir, global_step=step)
