@@ -42,8 +42,10 @@
 
   The installed site packages is under venv tf.
     python -c 'import os; import inspect; import tensorflow; print(os.path.dirname(inspect.getfile(tensorflow)))'
+    /Users/hyan2/.virtualenvs/tf/lib/python2.7/site-packages/tensorflow
 
   5. load tensorflow
+
     python -c "import tensorflow as tf"
 
     >>> import tensorflow as tf
@@ -55,4 +57,8 @@
     >>> b = tf.constant(32)
     >>> print(sess.run(a + b))
     
+  6. run the model.
+
+    python -m tensorflow.models.image.mnist.convolutional
+    python /Users/hyan2/.virtualenvs/tf/lib/python2.7/site-packages/tensorflow/models/image/mnist/convolutional.py
 
