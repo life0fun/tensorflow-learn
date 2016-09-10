@@ -1,3 +1,31 @@
+## Logic regression
+
+Linear model captures linearity between feature and output.
+
+When you stack linear models on top of each other - you are basically composing linear functions, and the resulting function is linear as well.
+
+And when using a non-linear functions, the resulting function is more complex and can convey more sophisticated models.
+
+This is the motivation behind neural networks.
+
+To introduce non-linearity to the model, the simpliest is sigmoid.
+
+Traditionally, neural networks used sigmoids as their output function, modern NN use rectifiers, because they are easier to compute, and frankly - the choice of the function does not matter all that much.
+
+If you were to invent an "Arctangent regression" in which you use `arctan` instead of the sigmoid, the model  would be just as powerful.
+
+
+## Dimension Deduction
+
+Sparse Matrix example, 100k words, we have 100k x 100k matrix for words relationship.
+for word embedding, with a window of size 5, scan through the entire corpus, e.g., wikipedia, if there is a sentence where word x is within window size from word y, then matrix[x,y] = 1.
+
+we can image this matrix[100k,100k] is very sparse. we need to perform dimension reduction.
+To reduct dimension, we perform feature extraction.
+At the very beginning, each word is a feature, and we create features by extracting/combining several low level features into one high level feature. We perform this recursively and finally we can reduce the dimension to the needed size. e.g., embedding size.
+
+
+## Feature Creation
 
 Machine learning model needs to learn sparse, specific rules from categorical data with a wide set of cross-feature. It also needs to generalize the learnings for further exploring.
 
