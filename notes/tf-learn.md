@@ -3,7 +3,7 @@
 A tf.Tensor represents a value produced by an Operation in a tensorflow session.
 
 A Tensor is a symbolic handle to one of the outputs of an Operation. 
-It does *NOT* hold the values of that operation's output, but instead provides a means of computing those values in a TensorFlow Session.
+It does *NOT* hold the values of that operation's output, but instead provides a means of computing those values in a TensorFlow Session. Lazy evaluation.
 
 tf.learn provides a set of APIs for loading dataset and create classifer.
 

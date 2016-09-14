@@ -176,8 +176,7 @@ Feed the Graph
 
   for step in xrange(FLAGS.max_steps):
     feed_dict = fill_feed_dict(data_sets.train,images_placeholder,labels_placeholder)
-    _, loss_value = sess.run([train_op, loss],
-                           feed_dict=feed_dict)
+    _, loss_value = sess.run([train_op, loss], feed_dict=feed_dict)
 
   summary_op = tf.merge_all_summaries()
   summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
